@@ -29,3 +29,40 @@ func FetchHistoricalAccountChannels(client *xrpl.HTTPClient, account string, des
 	// Send the request
 	return client.Post("", payload)
 }
+
+// StreamRecentAccountChannels subscribes to real-time data using WebSocket
+func StreamRecentAccountChannels(client *xrpl.WebSocketClient, account string, destinationAccount string, callback func(*AccountChannelsWSResponse)) error {
+	// Build the params
+	params := AccountChannelsParam{
+		Account: account,
+	}
+	if destinationAccount != "" {
+		params.DestinationAccount = destinationAccount
+	}
+
+	// Build the JSON-RPC payload
+	payload := AccountChannelsWSRequest{
+		ID:                1,
+		Command:           "account_channels",
+		Account:           account,
+		DestinationAccount: destinationAccount,
+		LedgerIndex:       "validated",
+	}
+
+	// Subscribe to WebSocket
+	err := client.Subscribe(payload)
+	if err != nil {
+		return err
+	}
+
+	// Read messages from WebSocket
+	client.ReadMessages(func(message []byte) {
+		var response AccountChannelsWSResponse
+		err := json.Unmarshal(message, &response)
+		if err != nil {
+			return
+		}
+		callback(&response)
+	})
+	return nil
+}
