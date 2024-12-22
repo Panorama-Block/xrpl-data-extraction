@@ -9,6 +9,7 @@ import (
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/ledger"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/transactions"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/orderbook"
+	"github.com/Panorama-Block/xrpl-data-extraction/internal/states"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -640,4 +641,53 @@ func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.Web
 
 		return c.JSON(fiber.Map{"message": "Subscribed to nft_sell_offers"})
 	})
+
+	// Fee - HTTP
+	app.Post("/server/fee", func(c *fiber.Ctx) error {
+		response, err := serverinfo.FetchFee(httpClient)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(response, &result); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
+		}
+
+		return c.JSON(result)
+	})
+
+	// Fee - WebSocket
+	app.Get("/server/fee/realtime", func(c *fiber.Ctx) error {
+		go serverinfo.StreamFee(wsClient, func(data *serverinfo.FeeWSResponse) {
+			log.Printf("Fee Real-Time Data: %+v", data)
+		})
+
+		return c.JSON(fiber.Map{"message": "Subscribed to fee stream"})
+	})
+
+	// Server State - HTTP
+	app.Post("/server/state", func(c *fiber.Ctx) error {
+		response, err := serverinfo.FetchServerState(httpClient)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(response, &result); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
+		}
+
+		return c.JSON(result)
+	})
+
+	// Server State - WebSocket
+	app.Get("/server/state/realtime", func(c *fiber.Ctx) error {
+		go serverinfo.StreamServerState(wsClient, func(data *serverinfo.ServerStateWSResponse) {
+			log.Printf("Server State Real-Time Data: %+v", data)
+		})
+
+		return c.JSON(fiber.Map{"message": "Subscribed to server_state stream"})
+	})
+
 }
