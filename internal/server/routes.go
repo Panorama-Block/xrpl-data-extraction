@@ -2,6 +2,7 @@ package server
 
 import (
 	"log" 
+	"sync"
 	"encoding/json" //for json operations
 
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/accounts"
@@ -11,6 +12,12 @@ import (
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/orderbook"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/states"
 	"github.com/gofiber/fiber/v2"
+)
+
+// Controle de conexões WebSocket ativas
+var (
+	stopChans = make(map[string]chan struct{})
+	mu        sync.Mutex
 )
 
 // setup routes
@@ -304,17 +311,51 @@ func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.Web
 		return c.JSON(result)
 	})
 
-	// Ledger Streaming Routes
-	app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
-		ledgerIndex := c.Query("ledger_index", "validated")
+	// ================= LEDGER STREAMING ==================
+app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
+	ledgerIndex := c.Query("ledger_index", "validated")
 
-		go ledger.StreamLedger(wsClient, ledgerIndex, func(data *ledger.LedgerWSResponse) {
+	stopChan := make(chan struct{})
+	connectionID := "ledger_realtime_" + ledgerIndex
+	mu.Lock()
+	if _, exists := stopChans[connectionID]; exists {
+		mu.Unlock()
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Stream already exists"})
+	}
+	stopChans[connectionID] = stopChan
+	mu.Unlock()
+
+	go func() {
+		if err := ledger.StreamLedger(wsClient, ledgerIndex, func(data *ledger.LedgerWSResponse) {
 			log.Printf("Ledger Real-Time Data: %+v", data)
-		})
+		}, stopChan); err != nil {
+			log.Printf("Erro no streaming de ledger: %v", err)
+		}
+	}()
+
+	return c.JSON(fiber.Map{"message": "Subscribed to ledger stream"})
+})
 
 
-		return c.JSON(fiber.Map{"message": "Subscribed to ledger stream"})
+
+
+	// ================= STOP STREAM - LEDGER ==================
+	app.Get("/ledger/stop", func(c *fiber.Ctx) error {
+			ledgerIndex := c.Query("ledger_index", "validated")
+			connectionID := "ledger_realtime_" + ledgerIndex
+
+			mu.Lock()
+			stopChan, exists := stopChans[connectionID]
+			if exists {
+					close(stopChan)
+					delete(stopChans, connectionID)
+					mu.Unlock()
+					return c.JSON(fiber.Map{"message": "Stopped streaming for ledger"})
+			}
+			mu.Unlock()
+			return c.Status(404).JSON(fiber.Map{"error": "Stream not found"})
 	})
+
 
 	app.Get("/ledger/closed/realtime", func(c *fiber.Ctx) error {
 		go ledger.StreamLedgerClosed(wsClient, func(data *ledger.LedgerClosedWSResponse) {
