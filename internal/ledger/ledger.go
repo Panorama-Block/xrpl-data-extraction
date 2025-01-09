@@ -1,6 +1,8 @@
 package ledger
 
 import (
+	"log"
+
 	"encoding/json"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/xrpl"
 )
@@ -57,25 +59,42 @@ func FetchLedgerData(client *xrpl.HTTPClient, ledgerHash string, binary bool, li
 	return client.Post("", request)
 }
 
-// StreamLedger fetches ledger information via WebSocket
-func StreamLedger(wsClient *xrpl.WebSocketClient, ledgerIndex string, callback func(*LedgerWSResponse)) error {
-	request := LedgerWSRequest{
-		ID:          1,
-		Command:     "ledger",
-		LedgerIndex: ledgerIndex,
+// StreamLedger envia o comando de subscrição para o WebSocket e processa mensagens continuamente
+func StreamLedger(wsClient *xrpl.WebSocketClient, ledgerIndex string, callback func(*LedgerWSResponse), stopChan chan struct{}) error {
+	// Comando de subscrição para o WebSocket
+	request := map[string]interface{}{
+		"id":      1,
+		"command": "subscribe",
+		"streams": []string{"ledger"}, // Subscrição no stream "ledger"
 	}
 
-	err := wsClient.Subscribe(request)
-	if err != nil {
+	// Enviar comando de subscrição
+	if err := wsClient.Subscribe(request); err != nil {
+		log.Printf("Erro ao enviar comando de subscrição: %v", err)
 		return err
 	}
 
-	wsClient.ReadMessages(func(msg []byte) {
-		var response LedgerWSResponse
-		if err := json.Unmarshal(msg, &response); err == nil {
-			callback(&response)
-		}
-	})
+	// Processar mensagens continuamente
+	go func() {
+		wsClient.ReadMessages(func(msg []byte) {
+			select {
+			case <-stopChan: // Parar quando o canal de parada for fechado
+				log.Println("Encerrando streaming de ledger")
+				return
+			default:
+				// Desserializar mensagem para a estrutura LedgerWSResponse
+				var response LedgerWSResponse
+				if err := json.Unmarshal(msg, &response); err != nil {
+					log.Printf("Erro ao desserializar mensagem: %v", err)
+					return
+				}
+
+				log.Printf("Mensagem processada: %+v", response)
+				callback(&response)
+			}
+		})
+	}()
+
 	return nil
 }
 
