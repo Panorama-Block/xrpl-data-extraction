@@ -10,8 +10,10 @@ import (
 type Config struct {
 	WebSocketURL string
 	APIBaseURL   string
+	MongoURI     string
 }
 
+// LoadConfig carrega as variáveis do .env ou do sistema
 func LoadConfig() *Config {
 	err := godotenv.Load()
 	if err != nil {
@@ -21,5 +23,6 @@ func LoadConfig() *Config {
 	return &Config{
 		WebSocketURL: os.Getenv("WEBSOCKET_URL"),
 		APIBaseURL:   os.Getenv("API_BASE_URL"),
+		MongoURI:     os.Getenv("MONGO_URI"),
 	}
 }
