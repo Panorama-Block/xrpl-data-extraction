@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/Panorama-Block/xrpl-data-extraction/config"
+	"github.com/Panorama-Block/xrpl-data-extraction/internal/database"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/server"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/xrpl"
 	"github.com/gofiber/fiber/v2"
@@ -22,6 +23,11 @@ func main() {
 
 	// Initialize Fiber app
 	app := fiber.New()
+
+	// Conectar ao MongoDB
+	if err := database.ConnectMongoDB(cfg); err != nil {
+		log.Fatalf("Erro ao conectar ao MongoDB: %v", err)
+	}
 
 	// Apply logging middleware globally
 	app.Use(server.LoggingMiddleware)

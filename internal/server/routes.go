@@ -311,50 +311,73 @@ func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.Web
 		return c.JSON(result)
 	})
 
-	// ================= LEDGER STREAMING ==================
+var stopChan chan struct{}
+
 app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
-	ledgerIndex := c.Query("ledger_index", "validated")
-
-	stopChan := make(chan struct{})
-	connectionID := "ledger_realtime_" + ledgerIndex
-	mu.Lock()
-	if _, exists := stopChans[connectionID]; exists {
-		mu.Unlock()
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Stream already exists"})
-	}
-	stopChans[connectionID] = stopChan
-	mu.Unlock()
-
-	go func() {
-		if err := ledger.StreamLedger(wsClient, ledgerIndex, func(data *ledger.LedgerWSResponse) {
-			log.Printf("Ledger Real-Time Data: %+v", data)
-		}, stopChan); err != nil {
-			log.Printf("Erro no streaming de ledger: %v", err)
+	stopChan = make(chan struct{})
+	go ledger.StreamLedger(wsClient, func(data *ledger.LedgerSubscribeClosedResponse) {
+		err := ledger.SaveLedgerToDB(data)
+		if err != nil {
+			log.Printf("❌ Erro ao salvar o ledger no MongoDB: %v", err)
 		}
-	}()
+	}, stopChan)
 
-	return c.JSON(fiber.Map{"message": "Subscribed to ledger stream"})
+	return c.JSON(fiber.Map{"message": "📡 Streaming de ledgers iniciado!"})
+})
+
+app.Get("/ledger/stop", func(c *fiber.Ctx) error {
+	close(stopChan)
+	return c.JSON(fiber.Map{"message": "⛔ Streaming de ledgers encerrado!"})
 })
 
 
+	// // ================= LEDGER STREAMING ==================
+	// app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
+	// 	ledgerIndex := c.Query("ledger_index", "validated")
 
+	// 	stopChan := make(chan struct{})
+	// 	connectionID := "ledger_realtime_" + ledgerIndex
 
-	// ================= STOP STREAM - LEDGER ==================
-	app.Get("/ledger/stop", func(c *fiber.Ctx) error {
-			ledgerIndex := c.Query("ledger_index", "validated")
-			connectionID := "ledger_realtime_" + ledgerIndex
+	// 	mu.Lock()
+	// 	if _, exists := stopChans[connectionID]; exists {
+	// 		mu.Unlock()
+	// 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Stream already exists"})
+	// 	}
+	// 	stopChans[connectionID] = stopChan
+	// 	mu.Unlock()
 
-			mu.Lock()
-			stopChan, exists := stopChans[connectionID]
-			if exists {
-					close(stopChan)
-					delete(stopChans, connectionID)
-					mu.Unlock()
-					return c.JSON(fiber.Map{"message": "Stopped streaming for ledger"})
-			}
-			mu.Unlock()
-			return c.Status(404).JSON(fiber.Map{"error": "Stream not found"})
-	})
+	// 	go func() {
+	// 		if err := ledger.StreamLedger(wsClient, func(data *ledger.LedgerWSResponse) {
+	// 			log.Printf("Ledger Real-Time Data: %+v", data)
+	// 			// Salvar no banco de dados
+	// 			err := ledger.SaveLedgerToDB(data)
+	// 			if err != nil {
+	// 				log.Printf("Erro ao salvar no MongoDB: %v", err)
+	// 			}
+	// 		}, stopChan); err != nil {
+	// 			log.Printf("Erro no streaming de ledger: %v", err)
+	// 		}
+	// 	}()
+
+	// 	return c.JSON(fiber.Map{"message": "Subscribed to ledger stream"})
+	// })
+
+	// // ================= STOP STREAM - LEDGER ==================
+	// app.Get("/ledger/stop", func(c *fiber.Ctx) error {
+	// 	ledgerIndex := c.Query("ledger_index", "validated")
+	// 	connectionID := "ledger_realtime_" + ledgerIndex
+
+	// 	mu.Lock()
+	// 	stopChan, exists := stopChans[connectionID]
+	// 	if exists {
+	// 		close(stopChan)
+	// 		delete(stopChans, connectionID)
+	// 		mu.Unlock()
+	// 		return c.JSON(fiber.Map{"message": "Stopped streaming for ledger"})
+	// 	}
+	// 	mu.Unlock()
+	// 	return c.Status(404).JSON(fiber.Map{"error": "Stream not found"})
+	// })
 
 
 	app.Get("/ledger/closed/realtime", func(c *fiber.Ctx) error {

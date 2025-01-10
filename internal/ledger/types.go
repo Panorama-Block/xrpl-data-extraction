@@ -110,6 +110,39 @@ type LedgerWSResponse struct {
 	} `json:"result"`
 }
 
+// Tipagem para a resposta inicial e subsequente do WebSocket Subscribe
+type LedgerSubscribeResponse struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Type     string `json:"type"`
+	Result   struct {
+		ValidatedLedgers string `json:"validated_ledgers"`
+		LedgerIndex      int    `json:"ledger_index"`
+		LedgerHash       string `json:"ledger_hash"`
+		LedgerTime       int64  `json:"ledger_time"`
+		FeeBase          int    `json:"fee_base"`
+		ReserveBase      int    `json:"reserve_base"`
+		ReserveInc       int    `json:"reserve_inc"`
+	} `json:"result"`
+	Warnings []struct {
+		ID      int    `json:"id"`
+		Message string `json:"message"`
+	} `json:"warnings,omitempty"`
+}
+
+// Tipagem para as mensagens subsequentes do stream
+type LedgerSubscribeClosedResponse struct {
+	Type             string `json:"type"`
+	LedgerIndex      int    `json:"ledger_index"`
+	LedgerHash       string `json:"ledger_hash"`
+	LedgerTime       int64  `json:"ledger_time"`
+	FeeBase          int    `json:"fee_base"`
+	ReserveBase      int    `json:"reserve_base"`
+	ReserveInc       int    `json:"reserve_inc"`
+	ValidatedLedgers string `json:"validated_ledgers"`
+	TxnCount         int    `json:"txn_count"`
+}
+
 // WS Ledger Closed Request
 type LedgerClosedWSRequest struct {
 	ID      int    `json:"id"`
