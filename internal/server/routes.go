@@ -20,6 +20,7 @@ var (
 	mu        sync.Mutex
 )
 
+
 // setup routes
 func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.WebSocketClient) {
 	// Historical data account channels Endpoint
@@ -241,24 +242,25 @@ func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.Web
 		return c.JSON(fiber.Map{"message": "Subscribed to gateway_balances"})
 	})
 
-// Ledger Information - HTTP POST
 	app.Post("/ledger", func(c *fiber.Ctx) error {
 		var payload ledger.LedgerParam
 		if err := c.BodyParser(&payload); err != nil {
+			log.Printf("❌ Erro ao interpretar o payload: %v", err)
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 		}
 
-		response, err := ledger.FetchLedger(httpClient, payload.LedgerIndex, payload.Transactions, payload.Expand, payload.OwnerFunds)
+		if payload.LedgerIndex == "" {
+    return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "LedgerIndex é obrigatório"})
+}
+
+
+		response, err := ledger.FetchLedgerInfo(httpClient, payload.LedgerIndex)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			log.Printf("❌ Erro ao buscar dados do ledger: %v", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Error fetching ledger data"})
 		}
 
-		var result map[string]interface{}
-		if err := json.Unmarshal(response, &result); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
-		}
-
-		return c.JSON(result)
+		return c.JSON(response)
 	})
 
 	// Most Recently Closed Ledger - HTTP POST
@@ -315,11 +317,8 @@ var stopChan chan struct{}
 
 app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
 	stopChan = make(chan struct{})
-	go ledger.StreamLedger(wsClient, func(data *ledger.LedgerSubscribeClosedResponse) {
-		err := ledger.SaveLedgerToDB(data)
-		if err != nil {
-			log.Printf("❌ Erro ao salvar o ledger no MongoDB: %v", err)
-		}
+	go ledger.StreamLedger(wsClient, httpClient, func(data *ledger.LedgerSubscribeClosedResponse) {
+
 	}, stopChan)
 
 	return c.JSON(fiber.Map{"message": "📡 Streaming de ledgers iniciado!"})
@@ -546,7 +545,7 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "Subscribed to Book Changes"})
 	})
 
-		app.Post("/orderbook/book_offers", func(c *fiber.Ctx) error {
+	app.Post("/orderbook/book_offers", func(c *fiber.Ctx) error {
 		var params orderbook.BookOffersParams
 		if err := c.BodyParser(&params); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})

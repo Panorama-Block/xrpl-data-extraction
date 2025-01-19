@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # Serviço MongoDB
   mongodb:
     image: mongo:6.0
     container_name: xrpl-mongodb
@@ -10,15 +7,19 @@ services:
     volumes:
       - mongodb_data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: hugo2003
-      MONGO_INITDB_DATABASE: xrpl
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_ROOT_DATABASE}
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: always
 
-  # Serviço Go (Servidor Fiber)
   go_app:
     build:
-      context: . 
+      context: .
       dockerfile: Dockerfile
     container_name: xrpl-go-server
     ports:
@@ -26,9 +27,13 @@ services:
     depends_on:
       - mongodb
     environment:
-      MONGO_URI: mongodb://admin:hugo2003@mongodb:27017/xrpl?authSource=admin
-      WEBSOCKET_URL: wss://s1.ripple.com/
+      - MONGO_URI=${MONGO_URI}
+      - WEBSOCKET_URL=${WEBSOCKET_URL}
+      - API_BASE_URL=${API_BASE_URL}
+      - SERVER_PORT=${SERVER_PORT}
     restart: always
+    env_file:
+      - .env
 
 volumes:
   mongodb_data:

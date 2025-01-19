@@ -43,11 +43,18 @@ func (wsc *WebSocketClient) ReadMessages(callback func(message []byte)) {
 	defer wsc.Connection.Close() // close the connection when the function returns
 
 	for {
-		_, msg, err := wsc.Connection.ReadMessage() // read a message from the WebSocket server
-		if err != nil {
-			log.Printf("WebSocket error: %v", err)
-			break
-		}
-		callback(msg) // call the callback function with the message
+    _, msg, err := wsc.Connection.ReadMessage()
+    if err != nil {
+        log.Printf("⚠️ WebSocket desconectado. Tentando reconectar... Erro: %v", err)
+        time.Sleep(5 * time.Second) // Esperar antes de tentar reconectar
+        wsc.Connection, _, err = websocket.DefaultDialer.Dial(wsc.Connection.RemoteAddr().String(), nil)
+        if err != nil {
+            log.Printf("❌ Falha ao reconectar: %v", err)
+            continue
+        }
+        log.Println("✅ Reconexão bem-sucedida!")
+        continue
+    }
+    callback(msg)
 	}
 }

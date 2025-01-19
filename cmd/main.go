@@ -29,6 +29,10 @@ func main() {
 		log.Fatalf("Erro ao conectar ao MongoDB: %v", err)
 	}
 
+	if err := database.CreateIndexes(); err != nil {
+		log.Fatalf("Erro ao criar índices: %v", err)
+	}
+
 	// Apply logging middleware globally
 	app.Use(server.LoggingMiddleware)
 

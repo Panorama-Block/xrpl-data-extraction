@@ -3,8 +3,6 @@ package config
 import (
 	"log"
 	"os"
-
-	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -13,16 +11,21 @@ type Config struct {
 	MongoURI     string
 }
 
-// LoadConfig carrega as variáveis do .env ou do sistema
 func LoadConfig() *Config {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("No .env file found, using system environment variables")
-	}
+    wsURL := os.Getenv("WEBSOCKET_URL")
+    apiURL := os.Getenv("API_BASE_URL")
+    mongoURI := os.Getenv("MONGO_URI")
 
-	return &Config{
-		WebSocketURL: os.Getenv("WEBSOCKET_URL"),
-		APIBaseURL:   os.Getenv("API_BASE_URL"),
-		MongoURI:     os.Getenv("MONGO_URI"),
-	}
+    // Validar variáveis obrigatórias
+    if wsURL == "" || apiURL == "" || mongoURI == "" {
+        log.Fatalf("❌ Variáveis obrigatórias não definidas! Certifique-se de definir WEBSOCKET_URL, API_BASE_URL e MONGO_URI")
+    }
+
+    return &Config{
+        WebSocketURL: wsURL,
+        APIBaseURL:   apiURL,
+				MongoURI:     mongoURI,
+    }
 }
+
+

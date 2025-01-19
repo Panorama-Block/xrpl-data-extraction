@@ -141,6 +141,7 @@ type LedgerSubscribeClosedResponse struct {
 	ReserveInc       int    `json:"reserve_inc"`
 	ValidatedLedgers string `json:"validated_ledgers"`
 	TxnCount         int    `json:"txn_count"`
+	TotalCoins       string `json:"total_coins"`
 }
 
 // WS Ledger Closed Request
