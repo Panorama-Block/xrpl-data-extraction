@@ -5,19 +5,19 @@ import (
 	"context"
 	"time"
 	"encoding/json"
-
+	
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/database"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/xrpl"
 
 )
 
-// FetchLedger fetches ledger information (HTTP)
-func FetchLedger(client *xrpl.HTTPClient, ledgerIndex string, transactions, expand, ownerFunds bool) ([]byte, error) {
+// FetchLedgerInfo sends a properly structured HTTP request to fetch ledger information
+func FetchLedgerInfo(client *xrpl.HTTPClient, ledgerIndex string) (*LedgerResponse, error) {
 	params := LedgerParam{
 		LedgerIndex:  ledgerIndex,
-		Transactions: transactions,
-		Expand:       expand,
-		OwnerFunds:   ownerFunds,
+		Transactions: true,
+		Expand:       true,
+		OwnerFunds:   false,
 	}
 
 	request := LedgerRequest{
@@ -25,8 +25,27 @@ func FetchLedger(client *xrpl.HTTPClient, ledgerIndex string, transactions, expa
 		Params: []LedgerParam{params},
 	}
 
-	return client.Post("", request)
+	// Send the request using the HTTP client with the direct URL
+	responseData, err := client.Post("https://s1.ripple.com:51234", request)
+	if err != nil {
+		log.Printf("❌ Failed to fetch ledger info: %v", err)
+		return nil, err
+	}
+
+	// Parse the response into the defined struct
+	var ledgerResponse LedgerResponse
+	err = json.Unmarshal(responseData, &ledgerResponse)
+	if err != nil {
+		log.Printf("❌ Error unmarshalling ledger response: %v", err)
+		return nil, err
+	}
+
+	log.Printf("✅ Successfully fetched ledger info: LedgerIndex: %s", ledgerResponse.Result.Ledger.LedgerIndex)
+	return &ledgerResponse, nil
 }
+
+
+
 
 // FetchLedgerClosed fetches the most recently closed ledger
 func FetchLedgerClosed(client *xrpl.HTTPClient) ([]byte, error) {
@@ -115,9 +134,9 @@ func StreamLedger(wsClient *xrpl.WebSocketClient, callback func(*LedgerSubscribe
 func SaveLedgerToDB(data *LedgerSubscribeClosedResponse) error {
 	collection := database.GetLedgerCollection()
 
-	if data.LedgerIndex == 0 || data.LedgerHash == "" {
-		log.Println("⚠️ Dados incompletos. Ignorando salvamento.")
-		return nil
+	if data.LedgerIndex == 0 || data.LedgerHash == "" || data.TxnCount <= 0 {
+    log.Println("⚠️ Dados incompletos ou inválidos. Ignorando salvamento.")
+    return nil
 	}
 
 	ledgerData := LedgerSchema{
@@ -141,7 +160,6 @@ func SaveLedgerToDB(data *LedgerSubscribeClosedResponse) error {
 	log.Printf("✅ Ledger salvo no banco de dados: %+v", ledgerData)
 	return nil
 }
-
 
 
 // StreamLedgerClosed fetches the most recent closed ledger via WebSocket

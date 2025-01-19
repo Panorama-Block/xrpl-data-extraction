@@ -2,11 +2,11 @@ package database
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
 	"github.com/Panorama-Block/xrpl-data-extraction/config"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -20,11 +20,13 @@ func ConnectMongoDB(cfg *config.Config) error {
 
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
 	if err != nil {
-		return fmt.Errorf("Erro ao conectar ao MongoDB: %v", err)
+		log.Printf("❌ Erro ao conectar ao MongoDB: %v", err)
+		return err
 	}
 
 	if err := client.Ping(ctx, nil); err != nil {
-		return fmt.Errorf("Erro ao fazer ping no MongoDB: %v", err)
+		log.Printf("❌ Erro ao pingar o MongoDB: %v", err)
+		return err
 	}
 
 	log.Println("✅ Conectado ao MongoDB com sucesso!")
@@ -36,3 +38,31 @@ func ConnectMongoDB(cfg *config.Config) error {
 func GetLedgerCollection() *mongo.Collection {
 	return Client.Database("xrpl").Collection("ledger")
 }
+
+func CreateIndexes() error {
+    collection := GetLedgerCollection()
+
+    // Índice único para ledger_index
+    _, err := collection.Indexes().CreateOne(context.Background(), mongo.IndexModel{
+        Keys:    bson.D{{Key: "ledger_index", Value: 1}},
+        Options: options.Index().SetUnique(true),
+    })
+    if err != nil {
+        log.Printf("⚠️ Índice para ledger_index já existe: %v", err)
+				return nil
+    }
+
+    // Índice TTL para expirar dados antigos (30 dias)
+    _, err = collection.Indexes().CreateOne(context.Background(), mongo.IndexModel{
+        Keys:    bson.D{{Key: "created_at", Value: 1}},
+        Options: options.Index().SetExpireAfterSeconds(30 * 24 * 60 * 60),
+    })
+    if err != nil {
+        log.Printf("⚠️ Índice TTL para created_at já existe: %v", err)
+				return nil
+    }
+
+    log.Println("✅ Índices criados com sucesso!")
+    return nil
+}
+
