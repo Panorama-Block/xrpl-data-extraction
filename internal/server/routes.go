@@ -250,8 +250,9 @@ func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.Web
 		}
 
 		if payload.LedgerIndex == "" {
-    	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "LedgerIndex é obrigatório"})
-		}
+    return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "LedgerIndex é obrigatório"})
+}
+
 
 		response, err := ledger.FetchLedgerInfo(httpClient, payload.LedgerIndex)
 		if err != nil {
@@ -316,11 +317,8 @@ var stopChan chan struct{}
 
 app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
 	stopChan = make(chan struct{})
-	go ledger.StreamLedger(wsClient, func(data *ledger.LedgerSubscribeClosedResponse) {
-		err := ledger.SaveLedgerToDB(data)
-		if err != nil {
-			log.Printf("❌ Erro ao salvar o ledger no MongoDB: %v", err)
-		}
+	go ledger.StreamLedger(wsClient, httpClient, func(data *ledger.LedgerSubscribeClosedResponse) {
+
 	}, stopChan)
 
 	return c.JSON(fiber.Map{"message": "📡 Streaming de ledgers iniciado!"})

@@ -59,7 +59,7 @@ func CreateIndexes() error {
     })
     if err != nil {
         log.Printf("⚠️ Índice TTL para created_at já existe: %v", err)
-				return nil
+				
     }
 
     log.Println("✅ Índices criados com sucesso!")

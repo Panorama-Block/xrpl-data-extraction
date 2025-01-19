@@ -24,7 +24,7 @@ func LoadConfig() *Config {
     return &Config{
         WebSocketURL: wsURL,
         APIBaseURL:   apiURL,
-        MongoURI:     mongoURI,
+				MongoURI:     mongoURI,
     }
 }
 

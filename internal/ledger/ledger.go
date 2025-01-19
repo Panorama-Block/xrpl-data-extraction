@@ -5,9 +5,12 @@ import (
 	"context"
 	"time"
 	"encoding/json"
+	"fmt"
 	
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/database"
 	"github.com/Panorama-Block/xrpl-data-extraction/internal/xrpl"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 
 )
 
@@ -44,6 +47,109 @@ func FetchLedgerInfo(client *xrpl.HTTPClient, ledgerIndex string) (*LedgerRespon
 	return &ledgerResponse, nil
 }
 
+func StreamLedger(wsClient *xrpl.WebSocketClient, httpClient *xrpl.HTTPClient, callback func(*LedgerSubscribeClosedResponse), stopChan chan struct{}) error {
+	request := map[string]interface{}{
+		"id":      "1",
+		"command": "subscribe",
+		"streams": []string{"ledger"},
+	}
+
+	if err := wsClient.Subscribe(request); err != nil {
+		log.Printf("❌ Erro ao enviar o comando de subscribe: %v", err)
+		return err
+	}
+
+	go func() {
+		for {
+			select {
+			case <-stopChan:
+				log.Println("⛔ Encerrando o streaming de ledgers.")
+				wsClient.Connection.Close()
+				return
+			default:
+				wsClient.ReadMessages(func(msg []byte) {
+					var closedResponse LedgerSubscribeClosedResponse
+
+					// Interpretar como mensagem de ledger fechado
+					if err := json.Unmarshal(msg, &closedResponse); err == nil && closedResponse.Type == "ledgerClosed" {
+						log.Printf("✅ Novo ledger recebido: %+v", closedResponse)
+
+						// Chamar FetchLedgerInfo para obter totalCoins
+						ledgerIndex := fmt.Sprintf("%d", closedResponse.LedgerIndex)
+						ledgerInfo, err := FetchLedgerInfo(httpClient, ledgerIndex)
+						if err != nil {
+							log.Printf("❌ Erro ao buscar informações adicionais do ledger: %v", err)
+						} else {
+							// Extraindo o campo totalCoins
+							totalCoins := ledgerInfo.Result.Ledger.TotalCoins
+							log.Printf("✅ TotalCoins extraído: %s", totalCoins)
+
+							// Adicionar totalCoins aos dados WebSocket
+							closedResponse.TotalCoins = totalCoins
+						}
+
+						// Salvar no banco de dados
+						if err := SaveLedgerToDB(&closedResponse); err != nil {
+							log.Printf("❌ Erro ao salvar no banco de dados: %v", err)
+						}
+						
+						// Invocar o callback com os dados atualizados
+						callback(&closedResponse)
+					} else {
+						log.Printf("⚠️ Mensagem desconhecida recebida: %s", string(msg))
+					}
+				})
+			}
+		}
+	}()
+	return nil
+}
+
+
+
+func SaveLedgerToDB(data *LedgerSubscribeClosedResponse) error {
+	collection := database.GetLedgerCollection()
+
+	// Dados incompletos ou inválidos
+	if data.LedgerIndex == 0 || data.LedgerHash == "" || data.TxnCount <= 0 || data.TotalCoins == "" {
+		log.Println("⚠️ Dados incompletos ou inválidos. Ignorando salvamento.")
+		return nil
+	}
+
+	ledgerData := LedgerSchema{
+		LedgerIndex:    data.LedgerIndex,
+		LedgerHash:     data.LedgerHash,
+		CloseTimeHuman: time.Unix(data.LedgerTime, 0).Format(time.RFC3339),
+		TxnCount:       data.TxnCount,
+		FeeBase:        data.FeeBase,
+		TotalCoins:     data.TotalCoins,
+		CreatedAt:      time.Now(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Verificar se o ledger já existe no banco de dados
+	filter := bson.M{"ledger_index": data.LedgerIndex}
+	existing := collection.FindOne(ctx, filter)
+	if existing.Err() == nil {
+		log.Printf("⚠️ Ledger com ledger_index %d já existe no banco de dados. Ignorando.", data.LedgerIndex)
+		return nil
+	} else if existing.Err() != mongo.ErrNoDocuments {
+		log.Printf("❌ Erro ao verificar existência do ledger no banco de dados: %v", existing.Err())
+		return existing.Err()
+	}
+
+	// Inserir o ledger no banco de dados
+	_, err := collection.InsertOne(ctx, ledgerData)
+	if err != nil {
+		log.Printf("❌ Erro ao salvar no banco de dados: %v", err)
+		return err
+	}
+
+	log.Printf("✅ Ledger salvo no banco de dados: %+v", ledgerData)
+	return nil
+}
 
 
 
@@ -81,86 +187,6 @@ func FetchLedgerData(client *xrpl.HTTPClient, ledgerHash string, binary bool, li
 
 	return client.Post("", request)
 }
-
-
-// StreamLedger usando o comando subscribe corretamente e printando os dados completos
-func StreamLedger(wsClient *xrpl.WebSocketClient, callback func(*LedgerSubscribeClosedResponse), stopChan chan struct{}) error {
-	request := map[string]interface{}{
-		"id":      "1",
-		"command": "subscribe",
-		"streams": []string{"ledger"},
-	}
-
-	if err := wsClient.Subscribe(request); err != nil {
-		log.Printf("❌ Erro ao enviar o comando de subscribe: %v", err)
-		return err
-	}
-
-	go func() {
-		for {
-			select {
-			case <-stopChan:
-				log.Println("⛔ Encerrando o streaming de ledgers.")
-				wsClient.Connection.Close()
-				return
-			default:
-				wsClient.ReadMessages(func(msg []byte) {
-					var initialResponse LedgerSubscribeResponse
-					var closedResponse LedgerSubscribeClosedResponse
-
-					// Tentar interpretar como resposta inicial
-					if err := json.Unmarshal(msg, &initialResponse); err == nil && initialResponse.Type == "response" {
-						log.Printf("✅ Conexão estabelecida. Ledger Atual: %+v", initialResponse.Result)
-						return
-					}
-
-					// Tentar interpretar como mensagem de ledger fechado
-					if err := json.Unmarshal(msg, &closedResponse); err == nil && closedResponse.Type == "ledgerClosed" {
-						log.Printf("✅ Novo ledger fechado recebido: %+v", closedResponse)
-						callback(&closedResponse)
-						return
-					}
-
-					// Caso não caia em nenhum dos dois
-					log.Printf("⚠️ Mensagem desconhecida recebida: %s", string(msg))
-				})
-			}
-		}
-	}()
-	return nil
-}
-
-
-func SaveLedgerToDB(data *LedgerSubscribeClosedResponse) error {
-	collection := database.GetLedgerCollection()
-
-	if data.LedgerIndex == 0 || data.LedgerHash == "" || data.TxnCount <= 0 {
-    log.Println("⚠️ Dados incompletos ou inválidos. Ignorando salvamento.")
-    return nil
-	}
-
-	ledgerData := LedgerSchema{
-		LedgerIndex:     data.LedgerIndex,
-		LedgerHash:      data.LedgerHash,
-		// CloseTimeHuman:  time.Unix(data.LedgerTime, 0).Format(time.RFC3339),
-		TxnCount:        data.TxnCount,
-		FeeBase:         data.FeeBase,
-		CreatedAt:       time.Now(),
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := collection.InsertOne(ctx, ledgerData)
-	if err != nil {
-		log.Printf("❌ Erro ao salvar no banco de dados: %v", err)
-		return err
-	}
-
-	log.Printf("✅ Ledger salvo no banco de dados: %+v", ledgerData)
-	return nil
-}
-
 
 // StreamLedgerClosed fetches the most recent closed ledger via WebSocket
 func StreamLedgerClosed(wsClient *xrpl.WebSocketClient, callback func(*LedgerClosedWSResponse)) error {
