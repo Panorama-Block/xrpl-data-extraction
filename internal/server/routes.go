@@ -242,85 +242,34 @@ func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.Web
 		return c.JSON(fiber.Map{"message": "Subscribed to gateway_balances"})
 	})
 
-	app.Post("/ledger", func(c *fiber.Ctx) error {
-		var payload ledger.LedgerParam
-		if err := c.BodyParser(&payload); err != nil {
-			log.Printf("❌ Erro ao interpretar o payload: %v", err)
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
-		}
-
-		if payload.LedgerIndex == "" {
+	
+	
+	// ==================================================================================================LEDGER DATA===============================================================================================================
+app.Post("/ledger", func(c *fiber.Ctx) error {
+	var payload ledger.LedgerParam
+	if err := c.BodyParser(&payload); err != nil {
+		log.Printf("❌ Erro ao interpretar o payload: %v", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+	if payload.LedgerIndex == "" {
     return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "LedgerIndex é obrigatório"})
-}
-
-
-		response, err := ledger.FetchLedgerInfo(httpClient, payload.LedgerIndex)
-		if err != nil {
-			log.Printf("❌ Erro ao buscar dados do ledger: %v", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Error fetching ledger data"})
-		}
-
-		return c.JSON(response)
-	})
-
-	// Most Recently Closed Ledger - HTTP POST
-	app.Post("/ledger/closed", func(c *fiber.Ctx) error {
-		response, err := ledger.FetchLedgerClosed(httpClient)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(response, &result); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
-		}
-
-		return c.JSON(result)
-	})
-
-	// Current Ledger Index - HTTP POST
-	app.Post("/ledger/current", func(c *fiber.Ctx) error {
-		response, err := ledger.FetchLedgerCurrent(httpClient)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(response, &result); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
-		}
-
-		return c.JSON(result)
-	})
-
-	// Ledger Data - HTTP POST
-	app.Post("/ledger/data/", func(c *fiber.Ctx) error {
-		var payload ledger.LedgerDataParam
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
-		}
-
-		response, err := ledger.FetchLedgerData(httpClient, payload.LedgerHash, payload.Binary, payload.Limit, payload.Marker)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(response, &result); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
-		}
-
-		return c.JSON(result)
-	})
-
+	}
+	response, err := ledger.FetchLedgerInfo(httpClient, payload.LedgerIndex)
+	if err != nil {
+		log.Printf("❌ Erro ao buscar dados do ledger: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Error fetching ledger data"})
+	}
+	return c.JSON(response)
+})
+	
 var stopChan chan struct{}
-
+	
 app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
 	stopChan = make(chan struct{})
 	go ledger.StreamLedger(wsClient, httpClient, func(data *ledger.LedgerSubscribeClosedResponse) {
-
+		
 	}, stopChan)
-
+	
 	return c.JSON(fiber.Map{"message": "📡 Streaming de ledgers iniciado!"})
 })
 
@@ -330,227 +279,145 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 })
 
 
-	// // ================= LEDGER STREAMING ==================
-	// app.Get("/ledger/realtime", func(c *fiber.Ctx) error {
-	// 	ledgerIndex := c.Query("ledger_index", "validated")
+// ==================================================================================================TRANSACTIONS===============================================================================================================
+app.Post("/transactions/entry", func(c *fiber.Ctx) error {
+	var payload transactions.TransactionEntryParam
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+	
+	response, err := transactions.FetchTransactionEntry(httpClient, payload.TxHash, payload.LedgerIndex)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	
+	var result map[string]interface{}
+	if err := json.Unmarshal(response, &result); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
+	}
+	
+	return c.JSON(result)
+})
 
-	// 	stopChan := make(chan struct{})
-	// 	connectionID := "ledger_realtime_" + ledgerIndex
+// Transaction Details - HTTP POST
+app.Post("/transactions", func(c *fiber.Ctx) error {
+	var payload transactions.TransactionParam
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+	
+	response, err := transactions.FetchTransaction(httpClient, payload.Transaction, payload.Binary)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	
+	var result map[string]interface{}
+	if err := json.Unmarshal(response, &result); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
+	}
+	return c.JSON(result)
+})
 
-	// 	mu.Lock()
-	// 	if _, exists := stopChans[connectionID]; exists {
-	// 		mu.Unlock()
-	// 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Stream already exists"})
-	// 	}
-	// 	stopChans[connectionID] = stopChan
-	// 	mu.Unlock()
-
-	// 	go func() {
-	// 		if err := ledger.StreamLedger(wsClient, func(data *ledger.LedgerWSResponse) {
-	// 			log.Printf("Ledger Real-Time Data: %+v", data)
-	// 			// Salvar no banco de dados
-	// 			err := ledger.SaveLedgerToDB(data)
-	// 			if err != nil {
-	// 				log.Printf("Erro ao salvar no MongoDB: %v", err)
-	// 			}
-	// 		}, stopChan); err != nil {
-	// 			log.Printf("Erro no streaming de ledger: %v", err)
-	// 		}
-	// 	}()
-
-	// 	return c.JSON(fiber.Map{"message": "Subscribed to ledger stream"})
-	// })
-
-	// // ================= STOP STREAM - LEDGER ==================
-	// app.Get("/ledger/stop", func(c *fiber.Ctx) error {
-	// 	ledgerIndex := c.Query("ledger_index", "validated")
-	// 	connectionID := "ledger_realtime_" + ledgerIndex
-
-	// 	mu.Lock()
-	// 	stopChan, exists := stopChans[connectionID]
-	// 	if exists {
-	// 		close(stopChan)
-	// 		delete(stopChans, connectionID)
-	// 		mu.Unlock()
-	// 		return c.JSON(fiber.Map{"message": "Stopped streaming for ledger"})
-	// 	}
-	// 	mu.Unlock()
-	// 	return c.Status(404).JSON(fiber.Map{"error": "Stream not found"})
-	// })
-
-
-	app.Get("/ledger/closed/realtime", func(c *fiber.Ctx) error {
-		go ledger.StreamLedgerClosed(wsClient, func(data *ledger.LedgerClosedWSResponse) {
-			log.Printf("Ledger Closed Data: %+v", data)
-		})
-
-		return c.JSON(fiber.Map{"message": "Subscribed to ledger_closed stream"})
+// Transaction Entry - WebSocket
+app.Get("/transactions/entry/realtime", func(c *fiber.Ctx) error {
+	txHash := c.Query("tx_hash")
+	ledgerIndex := c.Query("ledger_index", "")
+	
+	go transactions.StreamTransactionEntry(wsClient, txHash, ledgerIndex, func(data *transactions.TransactionEntryWSResponse) {
+		log.Printf("Transaction Entry Real-Time: %+v", data)
 	})
-
-	app.Get("/ledger/current/realtime", func(c *fiber.Ctx) error {
-		go ledger.StreamLedgerCurrent(wsClient, func(data *ledger.LedgerCurrentWSResponse) {
-			log.Printf("Current Ledger Data: %+v", data)
-		})
-
-		return c.JSON(fiber.Map{"message": "Subscribed to ledger_current stream"})
-	})
-
-	// Ledger Data Real-Time - WS
-	app.Get("/ledger/data/realtime", func(c *fiber.Ctx) error {
-		ledgerHash := c.Query("ledger_hash", "")
-		binary := c.QueryBool("binary", true)
-		limit := c.QueryInt("limit", 5)
-		marker := c.Query("marker", "")
-
-		go ledger.StreamLedgerData(wsClient, ledgerHash, binary, limit, marker, func(data *ledger.LedgerDataWSResponse) {
-			log.Printf("Ledger Data Real-Time: %+v", data)
-		})
-
-
-		return c.JSON(fiber.Map{"message": "Subscribed to ledger_data stream"})
-	})
-
-	// Transaction Entry - HTTP POST
-	app.Post("/transactions/entry", func(c *fiber.Ctx) error {
-		var payload transactions.TransactionEntryParam
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
-		}
-
-		response, err := transactions.FetchTransactionEntry(httpClient, payload.TxHash, payload.LedgerIndex)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(response, &result); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
-		}
-
-		return c.JSON(result)
-	})
-
-	// Transaction Details - HTTP POST
-	app.Post("/transactions", func(c *fiber.Ctx) error {
-		var payload transactions.TransactionParam
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
-		}
-
-		response, err := transactions.FetchTransaction(httpClient, payload.Transaction, payload.Binary)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(response, &result); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to parse response"})
-		}
-
-		return c.JSON(result)
-	})
-
-	// Transaction Entry - WebSocket
-	app.Get("/transactions/entry/realtime", func(c *fiber.Ctx) error {
-		txHash := c.Query("tx_hash")
-		ledgerIndex := c.Query("ledger_index", "")
-
-		go transactions.StreamTransactionEntry(wsClient, txHash, ledgerIndex, func(data *transactions.TransactionEntryWSResponse) {
-			log.Printf("Transaction Entry Real-Time: %+v", data)
-		})
-
-		return c.JSON(fiber.Map{"message": "Subscribed to transaction_entry"})
-	})
+	return c.JSON(fiber.Map{"message": "Subscribed to transaction_entry"})
+})
 
 	// Transaction Details - WebSocket
 	app.Get("/transactions/realtime", func(c *fiber.Ctx) error {
 		txHash := c.Query("transaction")
 		binary := c.QueryBool("binary", false)
-
+		
 		go transactions.StreamTransaction(wsClient, txHash, binary, func(data *transactions.TransactionWSResponse) {
 			log.Printf("Transaction Real-Time: %+v", data)
 		})
-
+		
 		return c.JSON(fiber.Map{"message": "Subscribed to tx"})
 	})
-
-// AMM Info - HTTP and WebSocket
+	
+	// AMM Info - HTTP and WebSocket
 	app.Post("/orderbook/amm_info", func(c *fiber.Ctx) error {
 		var request struct {
 			AMMAccount string     `json:"amm_account,omitempty"`
 			Asset      orderbook.AssetParam `json:"asset,omitempty"`
 			Asset2     orderbook.AssetParam `json:"asset2,omitempty"`
 		}
-
+		
 		if err := c.BodyParser(&request); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid payload"})
 		}
-
+		
 		response, err := orderbook.FetchAMMInfo(httpClient, request.AMMAccount, request.Asset, request.Asset2)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		
 		var result map[string]interface{}
 		if err := json.Unmarshal(response, &result); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(result)
 	})
-
+	
 	app.Get("/orderbook/amm_info/realtime", func(c *fiber.Ctx) error {
 		ammAccount := c.Query("amm_account", "")
 		var asset, asset2 orderbook.AssetParam
 		c.QueryParser(&asset)
 		c.QueryParser(&asset2)
-
+		
 		go orderbook.StreamAMMInfo(wsClient, ammAccount, asset, asset2, func(data *orderbook.AMMInfoWSResponse) {
 			log.Printf("AMM Info Real-Time: %+v", data)
 		})
-
+		
 		return c.JSON(fiber.Map{"message": "Subscribed to AMM Info"})
 	})
-
+	
 	// Book Changes - HTTP and WebSocket
 	app.Post("/orderbook/book_changes", func(c *fiber.Ctx) error {
 		var payload struct {
 			LedgerIndex int `json:"ledger_index"`
 		}
-
+		
 		if err := c.BodyParser(&payload); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid payload"})
 		}
-
+		
 		response, err := orderbook.FetchBookChanges(httpClient, payload.LedgerIndex)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		
 		var result map[string]interface{}
 		if err := json.Unmarshal(response, &result); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(result)
 	})
-
+	
 	app.Get("/orderbook/book_changes/realtime", func(c *fiber.Ctx) error {
 		ledgerIndex := c.QueryInt("ledger_index", 0)
-
+		
 		go orderbook.StreamBookChanges(wsClient, ledgerIndex, func(data *orderbook.BookChangesWSResponse) {
 			log.Printf("Book Changes Real-Time: %+v", data)
 		})
-
+		
 		return c.JSON(fiber.Map{"message": "Subscribed to Book Changes"})
 	})
-
+	
 	app.Post("/orderbook/book_offers", func(c *fiber.Ctx) error {
 		var params orderbook.BookOffersParams
 		if err := c.BodyParser(&params); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 		}
-
+		
 		response, err := orderbook.FetchBookOffers(httpClient, params)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
@@ -560,7 +427,7 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		if err := json.Unmarshal(response, &decodedResponse); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(decodedResponse)
 	})
 
@@ -578,14 +445,14 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 			},
 			Limit: c.QueryInt("limit", 10),
 		}
-
+		
 		go orderbook.StreamBookOffers(wsClient, params, func(data *orderbook.BookOffersWSResponse) {
 			log.Printf("Book Offers Data: %+v", data)
 		})
-
+		
 		return c.JSON(fiber.Map{"message": "Subscribed to book_offers stream"})
 	})
-
+	
 	// Get Aggregate Price - HTTP
 	app.Post("/orderbook/aggregate_price", func(c *fiber.Ctx) error {
 		var params orderbook.GetAggregatePriceParams
@@ -597,15 +464,15 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		
 		var decodedResponse map[string]interface{}
 		if err := json.Unmarshal(response, &decodedResponse); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(decodedResponse)
 	})
-
+	
 	// Get Aggregate Price - WebSocket
 	app.Get("/orderbook/aggregate_price/realtime", func(c *fiber.Ctx) error {
 		params := orderbook.GetAggregatePriceParams{
@@ -615,11 +482,11 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 			Trim:        c.QueryInt("trim", 20),
 			Oracles:     []orderbook.Oracle{}, // Fill dynamically from request if needed
 		}
-
+		
 		go orderbook.StreamAggregatePrice(wsClient, params, func(data *orderbook.GetAggregatePriceResponse) {
 			log.Printf("Aggregate Price Data: %+v", data)
 		})
-
+		
 		return c.JSON(fiber.Map{"message": "Subscribed to aggregate_price stream"})
 	})
 
@@ -634,15 +501,15 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		
 		var decodedResponse map[string]interface{}
 		if err := json.Unmarshal(response, &decodedResponse); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(decodedResponse)
 	})
-
+	
 	// NFT Buy Offers - WebSocket
 	app.Get("/orderbook/nft_buy_offers/realtime", func(c *fiber.Ctx) error {
 		params := orderbook.NFTBuyOffersWSRequest{
@@ -651,9 +518,9 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 			NFTID:     c.Query("nft_id"),
 			LedgerIndex: c.Query("ledger_index", "validated"),
 		}
-
+		
 		go wsClient.Subscribe(params)
-
+		
 		wsClient.ReadMessages(func(message []byte) {
 			var response orderbook.NFTBuyOffersWSResponse
 			if err := json.Unmarshal(message, &response); err == nil {
@@ -675,15 +542,15 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		
 		var decodedResponse map[string]interface{}
 		if err := json.Unmarshal(response, &decodedResponse); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(decodedResponse)
 	})
-
+	
 	// NFT Sell Offers - WebSocket
 	app.Get("/orderbook/nft_sell_offers/realtime", func(c *fiber.Ctx) error {
 		params := orderbook.NFTSellOffersWSRequest{
@@ -694,7 +561,7 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		}
 
 		go wsClient.Subscribe(params)
-
+		
 		wsClient.ReadMessages(func(message []byte) {
 			var response orderbook.NFTSellOffersWSResponse
 			if err := json.Unmarshal(message, &response); err == nil {
@@ -704,7 +571,7 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 
 		return c.JSON(fiber.Map{"message": "Subscribed to nft_sell_offers"})
 	})
-
+	
 	// Fee - HTTP
 	app.Post("/server/fee", func(c *fiber.Ctx) error {
 		response, err := serverinfo.FetchFee(httpClient)
@@ -716,7 +583,7 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		if err := json.Unmarshal(response, &result); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(result)
 	})
 
@@ -725,25 +592,25 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 		go serverinfo.StreamFee(wsClient, func(data *serverinfo.FeeWSResponse) {
 			log.Printf("Fee Real-Time Data: %+v", data)
 		})
-
+		
 		return c.JSON(fiber.Map{"message": "Subscribed to fee stream"})
 	})
-
+	
 	// Server State - HTTP
 	app.Post("/server/state", func(c *fiber.Ctx) error {
 		response, err := serverinfo.FetchServerState(httpClient)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
-
+		
 		var result map[string]interface{}
 		if err := json.Unmarshal(response, &result); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode response"})
 		}
-
+		
 		return c.JSON(result)
 	})
-
+	
 	// Server State - WebSocket
 	app.Get("/server/state/realtime", func(c *fiber.Ctx) error {
 		go serverinfo.StreamServerState(wsClient, func(data *serverinfo.ServerStateWSResponse) {
@@ -752,5 +619,4 @@ app.Get("/ledger/stop", func(c *fiber.Ctx) error {
 
 		return c.JSON(fiber.Map{"message": "Subscribed to server_state stream"})
 	})
-
 }
