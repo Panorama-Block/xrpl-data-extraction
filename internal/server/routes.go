@@ -23,6 +23,59 @@ var (
 
 // setup routes
 func SetupRoutes(app *fiber.App, httpClient *xrpl.HTTPClient, wsClient *xrpl.WebSocketClient) {
+
+// Inscrição em contas e monitoramento de transações em tempo real
+app.Post("/accounts/subscribe", func(c *fiber.Ctx) error {
+	// Extrair lista de contas do corpo da requisição
+	var payload struct {
+		Accounts []string `json:"accounts"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request payload",
+		})
+	}
+
+	if len(payload.Accounts) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Accounts list cannot be empty",
+		})
+	}
+
+	// Criar canal para gerenciar o stream
+	mu.Lock()
+	stopChan := make(chan struct{})
+	stopChans["accounts_subscribe"] = stopChan
+	mu.Unlock()
+
+	// Iniciar o streaming de contas
+	go accounts.SubscribeAccounts(wsClient, payload.Accounts, stopChan)
+
+	return c.JSON(fiber.Map{
+		"message":  "Subscription to accounts started",
+		"accounts": payload.Accounts,
+	})
+})
+
+// Cancelar inscrição no stream de contas
+app.Delete("/accounts/subscribe", func(c *fiber.Ctx) error {
+	mu.Lock()
+	stopChan, exists := stopChans["accounts_subscribe"]
+	if exists {
+		close(stopChan) // Enviar sinal de parada
+		delete(stopChans, "accounts_subscribe")
+		mu.Unlock()
+		return c.JSON(fiber.Map{"message": "Subscription to accounts stopped"})
+	}
+	mu.Unlock()
+
+	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+		"error": "No active subscription to accounts",
+	})
+})
+
+
+
 	// Historical data account channels Endpoint
 	app.Get("/accounts/:account/channels/historical", func(c *fiber.Ctx) error {
 		account := c.Params("account") // extract account part from url

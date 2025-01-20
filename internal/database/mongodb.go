@@ -38,6 +38,14 @@ func ConnectMongoDB(cfg *config.Config) error {
 func GetLedgerCollection() *mongo.Collection {
 	return Client.Database("xrpl").Collection("ledger")
 }
+// Retorna a coleção de accounts
+func GetAccountCollection() *mongo.Collection {
+	return Client.Database("xrpl").Collection("accounts")
+}
+// GetTransactionCollection retorna a coleção transactions do banco de dados MongoDB
+func GetTransactionCollection() *mongo.Collection {
+	return Client.Database("xrpl").Collection("transactions")
+}
 
 func CreateIndexes() error {
     collection := GetLedgerCollection()

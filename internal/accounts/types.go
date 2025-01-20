@@ -342,3 +342,30 @@ type GatewayBalancesWSResponse struct {
 		Validated   bool   `json:"validated"`
 	} `json:"result"`
 } 
+
+// ACCOUNT SUBSCRIBE TYPES
+
+type SubscribeAccountsRequest struct {
+	ID       string   `json:"id"`
+	Command  string   `json:"command"`
+	Accounts []string `json:"accounts"`
+}
+
+// AccountTransactionMessage representa a mensagem de transação recebida do WebSocket
+type AccountTransactionMessage struct {
+	Type        string `json:"type"`
+	Account     string `json:"Account"`
+	LedgerHash  string `json:"ledger_hash"`
+	LedgerIndex int    `json:"ledger_index"`
+	Tx          struct {
+		TransactionType string      `json:"TransactionType"`
+		Account         string      `json:"Account"`
+		Fee             string      `json:"Fee"`
+		TakerGets       interface{} `json:"TakerGets"`
+		TakerPays       interface{} `json:"TakerPays"`
+		Date            int64       `json:"date"`
+		OwnerFunds      string      `json:"owner_funds"`
+	} `json:"transaction"`
+	Validated bool   `json:"validated"`
+	Status    string `json:"status"`
+}
